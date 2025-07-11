@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         GitHub Repo Star Counter
 // @namespace    http://tampermonkey.net/
-// @version      1.6.4
-// @description  Finds all GitHub repo links on a page and displays their star count. Features a full settings UI for token, caching, and more.
-// @author       bnkr & gemini
+// @version      1.6.5
+// @description  Finds all GitHub repo links on a page and displays their star count.
+// @author       bnkr & gemini.google
 // @match        *://*/*
 // @grant        GM_xmlhttpRequest
 // @grant        GM_addStyle
@@ -21,7 +21,7 @@
     const DEFAULTS = {
         githubToken: "",
         cacheEnabled: true,
-        cacheDurationSeconds: 86400, // Default cache duration: 1 day (86400 seconds)
+        cacheDurationSeconds: 86400, // Default cache duration: 1 day
         maxCacheEntries: 1000,
         maxRetry: 3,
     };
@@ -31,32 +31,23 @@
     let config = GM_getValue(CONFIG_KEY, DEFAULTS);
 
     // --- Dynamically calculated constants ---
-    const CACHE_DURATION_MS = config.cacheDurationSeconds * 1000;
+    // Note: This will be recalculated when config changes.
+    let CACHE_DURATION_MS = config.cacheDurationSeconds * 1000;
+
     const CACHE_PREFIX = 'gh_star_';
     const CACHE_MANIFEST_KEY = 'gh_star_cache_manifest';
 
     // --- Style Definitions ---
     GM_addStyle(`
         .gh-star-count-badge {
-            display: inline-flex; /* Use flexbox for alignment */
-            align-items: center; /* Vertically center items */
-            margin-left: 6px;
-            padding: 2px 6px;
-            font-size: 12px;
-            font-weight: 600;
-            line-height: 1;
-            color: #24292e;
-            background-color: #eee;
-            border-radius: 3px;
-            text-decoration: none;
+            display: inline-flex; align-items: center; margin-left: 6px;
+            padding: 2px 6px; font-size: 12px; font-weight: 600;
+            line-height: 1; color: #24292e; background-color: #eee;
+            border-radius: 3px; text-decoration: none;
             font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
         }
         .gh-star-count-badge:hover { background-color: #ddd; text-decoration: none; }
-        .gh-star-count-badge .star-icon {
-            color: #f9a825;
-            margin-right: 3px;
-            /* vertical-align is not needed with flexbox */
-        }
+        .gh-star-count-badge .star-icon { color: #f9a825; margin-right: 3px; }
 
         /* --- Settings Panel Styles --- */
         #ghs-settings-overlay {
@@ -87,15 +78,9 @@
         .ghs-setting small { display: block; font-size: 12px; color: #666; margin-top: 5px; }
         .ghs-buttons { text-align: right; margin-top: 25px; }
         .ghs-buttons button {
-            display: inline-flex; /* Use flexbox for alignment */
-            align-items: center; /* Vertical centering */
-            justify-content: center; /* Horizontal centering */
-            padding: 10px 18px;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-            font-weight: bold;
-            margin-left: 10px;
+            display: inline-flex; align-items: center; justify-content: center;
+            padding: 10px 18px; border: none; border-radius: 5px;
+            cursor: pointer; font-weight: bold; margin-left: 10px;
             transition: background-color 0.2s, box-shadow 0.2s;
         }
         #ghs-save-btn { background-color: #28a745; color: white; }
@@ -104,12 +89,13 @@
         #ghs-cancel-btn:hover { background-color: #bbb; }
     `);
 
-    // --- Cache Management (All methods are now synchronous) ---
+    // --- Cache Management ---
     const cache = {
         get: (key) => {
             if (!config.cacheEnabled) return null;
             const manifest = GM_getValue(CACHE_MANIFEST_KEY, {});
             const entry = manifest[key];
+            // Use the dynamically updated CACHE_DURATION_MS
             if (entry && (Date.now() - entry.timestamp < CACHE_DURATION_MS)) {
                 const value = GM_getValue(CACHE_PREFIX + key, null);
                 return value !== null ? { stars: value } : null;
@@ -163,7 +149,7 @@
         return num.toString();
     }
 
-    // --- Core logic: Fetch and display star count (with retries) ---
+    // --- Core logic: Fetch and display star count ---
     function fetchAndDisplayStars(repoPath, elements, retries = 0) {
         const cachedData = cache.get(repoPath);
         if (cachedData) {
@@ -209,7 +195,7 @@
     }
 
     function markAsFailed(elements) {
-        elements.forEach(el => {el.dataset.ghStarsProcessed = 'failed'});
+        elements.forEach(el => el.dataset.ghStarsProcessed = 'failed');
     }
 
     function addStarBadge(elements, stars, repoPath) {
@@ -256,10 +242,8 @@
     // --- Initialization and Dynamic Content Monitoring ---
     function initialize() {
         GM_registerMenuCommand('GitHub Star Counter Settings', () => {
-            // If a panel already exists, remove it to ensure a clean state
             document.getElementById('ghs-settings-overlay')?.remove();
 
-            // Create the UI's HTML structure
             const uiHTML = `
                 <div id="ghs-settings-overlay">
                     <div id="ghs-settings-panel">
@@ -287,43 +271,47 @@
                         </div>
                         <div class="ghs-buttons">
                             <button id="ghs-cancel-btn">Cancel</button>
-                            <button id="ghs-save-btn">Save & Reload</button>
+                            <button id="ghs-save-btn">Save</button>
                         </div>
                     </div>
                 </div>
             `;
             document.body.insertAdjacentHTML('beforeend', uiHTML);
 
-            // Get newly created elements
             const overlay = document.getElementById('ghs-settings-overlay');
             const saveBtn = document.getElementById('ghs-save-btn');
             const cancelBtn = document.getElementById('ghs-cancel-btn');
 
-            // Populate the form with current settings
             const currentConfig = GM_getValue(CONFIG_KEY, DEFAULTS);
             document.getElementById('ghs-token').value = currentConfig.githubToken;
             document.getElementById('ghs-cache-enable').checked = currentConfig.cacheEnabled;
             document.getElementById('ghs-cache-duration').value = currentConfig.cacheDurationSeconds;
             document.getElementById('ghs-max-entries').value = currentConfig.maxCacheEntries;
 
-            // Define function to close and destroy the UI
             const closeAndDestroyUI = () => {
                 overlay.remove();
             };
 
-            // Bind event listeners
             saveBtn.addEventListener('click', () => {
                 const newConfig = {
                     githubToken: document.getElementById('ghs-token').value.trim(),
                     cacheEnabled: document.getElementById('ghs-cache-enable').checked,
                     cacheDurationSeconds: parseInt(document.getElementById('ghs-cache-duration').value, 10) || DEFAULTS.cacheDurationSeconds,
                     maxCacheEntries: parseInt(document.getElementById('ghs-max-entries').value, 10) || DEFAULTS.maxCacheEntries,
-                    maxRetry: currentConfig.maxRetry, // Keep non-UI settings
+                    maxRetry: currentConfig.maxRetry,
                 };
+
+                // 1. Save the new configuration to storage
                 GM_setValue(CONFIG_KEY, newConfig);
-                alert('Settings saved. The page will now reload to apply the changes.');
+
+                // 2. Update the script's currently running config object
+                config = newConfig;
+
+                // 3. Recalculate derived variables
+                CACHE_DURATION_MS = config.cacheDurationSeconds * 1000;
+
+                alert('Settings saved.');
                 closeAndDestroyUI();
-                location.reload();
             });
 
             cancelBtn.addEventListener('click', closeAndDestroyUI);
